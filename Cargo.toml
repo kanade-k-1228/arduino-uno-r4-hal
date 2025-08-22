@@ -10,6 +10,7 @@ keywords = ["embedded", "arduino", "hal", "ra4m1", "no-std"]
 categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
+ra4m1 = "0.2"
 embedded-hal = "1.0.0"
 nb = "1.1.0"
 cortex-m = "0.7"
@@ -21,9 +22,8 @@ fugit = "0.3"
 panic-rtt-target = { version = "0.1", features = ["cortex-m"] }
 rtt-target = "0.5"
 
-[features]
-default = ["rt"]
-rt = []
+[lib]
+test = false
 
 [profile.release]
 codegen-units = 1

@@ -1,11 +1,18 @@
+[build]
+target = "thumbv7em-none-eabihf"
+
 [target.thumbv7em-none-eabihf]
 runner = "probe-rs run --chip RA4M1"
 rustflags = [
   "-C", "link-arg=-Tlink.x",
 ]
 
-[build]
-target = "thumbv7em-none-eabihf"
-
 [env]
 DEFMT_LOG = "info"
+
+# テスト時は既定のターゲット（ホスト環境）を使用
+[profile.test]
+inherits = "dev"
+
+[target.'cfg(test)']
+rustflags = []

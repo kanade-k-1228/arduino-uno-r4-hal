@@ -3,9 +3,7 @@ use core::marker::PhantomData;
 use embedded_hal::digital::{
     ErrorType, InputPin, OutputPin, PinState as HalPinState, StatefulOutputPin,
 };
-
-const PORT_BASE: usize = 0x4004_0000;
-const PORT_OFFSET: usize = 0x20;
+use ra4m1::port0::RegisterBlock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PinMode {
@@ -60,40 +58,41 @@ pub struct InputPullUp;
 pub struct OutputOpenDrain;
 
 impl<const PORT: char, const PIN: u8, MODE> Pin<PORT, PIN, MODE> {
-    fn port_address(&self) -> usize {
-        let port_num = match PORT {
-            '0'..='9' => (PORT as usize) - ('0' as usize),
-            _ => panic!("Invalid port"),
-        };
-        PORT_BASE + (port_num * PORT_OFFSET)
+    fn port(&self) -> &RegisterBlock {
+        unsafe {
+            match PORT {
+                '0' => &*(ra4m1::PORT0::PTR as *const RegisterBlock),
+                '1' => &*(ra4m1::PORT1::PTR as *const RegisterBlock),
+                '2' => &*(ra4m1::PORT2::PTR as *const RegisterBlock),
+                '3' => &*(ra4m1::PORT3::PTR as *const RegisterBlock),
+                '4' => &*(ra4m1::PORT4::PTR as *const RegisterBlock),
+                '5' => &*(ra4m1::PORT5::PTR as *const RegisterBlock),
+                '6' => &*(ra4m1::PORT6::PTR as *const RegisterBlock),
+                '7' => &*(ra4m1::PORT7::PTR as *const RegisterBlock),
+                '8' => &*(ra4m1::PORT8::PTR as *const RegisterBlock),
+                '9' => &*(ra4m1::PORT9::PTR as *const RegisterBlock),
+                _ => panic!("Invalid port"),
+            }
+        }
     }
 
     fn pin_mask(&self) -> u16 {
         1 << PIN
     }
 
-    unsafe fn read_register(&self, offset: usize) -> u16 {
-        let addr = (self.port_address() + offset) as *const u16;
-        core::ptr::read_volatile(addr)
-    }
-
-    unsafe fn write_register(&self, offset: usize, value: u16) {
-        let addr = (self.port_address() + offset) as *mut u16;
-        core::ptr::write_volatile(addr, value);
-    }
-
-    unsafe fn modify_register(&self, offset: usize, clear_mask: u16, set_mask: u16) {
-        let current = self.read_register(offset);
-        let new_value = (current & !clear_mask) | set_mask;
-        self.write_register(offset, new_value);
+    fn pin_mask_u32(&self) -> u32 {
+        1u32 << PIN
     }
 }
 
 impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Input> {
     pub fn new() -> Self {
         let pin = Self { _mode: PhantomData };
+        let port = pin.port();
+        let mask = pin.pin_mask();
+
         unsafe {
-            pin.modify_register(0x00, pin.pin_mask(), 0);
+            port.pdr().modify(|r, w| w.bits(r.bits() & !mask));
         }
         pin
     }
@@ -107,13 +106,13 @@ impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Input> {
     }
 
     pub fn read(&self) -> PinState {
-        unsafe {
-            let value = self.read_register(0x08);
-            if value & self.pin_mask() != 0 {
-                PinState::High
-            } else {
-                PinState::Low
-            }
+        let port = self.port();
+        let value = port.pidr().read().bits();
+
+        if value & self.pin_mask() != 0 {
+            PinState::High
+        } else {
+            PinState::Low
         }
     }
 
@@ -129,35 +128,56 @@ impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Input> {
 impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, InputPullUp> {
     pub fn new() -> Self {
         let pin = Self { _mode: PhantomData };
+        let port = pin.port();
+        let mask = pin.pin_mask();
+        let mask_u32 = pin.pin_mask_u32();
+
         unsafe {
-            pin.modify_register(0x00, pin.pin_mask(), 0);
-            pin.modify_register(0x10, 0, pin.pin_mask());
+            port.pdr().modify(|r, w| w.bits(r.bits() & !mask));
+
+            port.pcntr1().modify(|r, w| {
+                let current = r.bits();
+                let pull_up_mask = mask_u32 << 4;
+                w.bits(current | pull_up_mask)
+            });
         }
         pin
     }
 
     pub fn into_output(self) -> Pin<PORT, PIN, Output> {
+        let port = self.port();
+        let mask_u32 = self.pin_mask_u32();
         unsafe {
-            self.modify_register(0x10, self.pin_mask(), 0);
+            port.pcntr1().modify(|r, w| {
+                let current = r.bits();
+                let pull_up_mask = mask_u32 << 4;
+                w.bits(current & !pull_up_mask)
+            });
         }
         Pin::<PORT, PIN, Output>::new()
     }
 
     pub fn into_input(self) -> Pin<PORT, PIN, Input> {
+        let port = self.port();
+        let mask_u32 = self.pin_mask_u32();
         unsafe {
-            self.modify_register(0x10, self.pin_mask(), 0);
+            port.pcntr1().modify(|r, w| {
+                let current = r.bits();
+                let pull_up_mask = mask_u32 << 4;
+                w.bits(current & !pull_up_mask)
+            });
         }
         Pin::<PORT, PIN, Input>::new()
     }
 
     pub fn read(&self) -> PinState {
-        unsafe {
-            let value = self.read_register(0x08);
-            if value & self.pin_mask() != 0 {
-                PinState::High
-            } else {
-                PinState::Low
-            }
+        let port = self.port();
+        let value = port.pidr().read().bits();
+
+        if value & self.pin_mask() != 0 {
+            PinState::High
+        } else {
+            PinState::Low
         }
     }
 
@@ -173,8 +193,11 @@ impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, InputPullUp> {
 impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Output> {
     pub fn new() -> Self {
         let pin = Self { _mode: PhantomData };
+        let port = pin.port();
+        let mask = pin.pin_mask();
+
         unsafe {
-            pin.modify_register(0x00, 0, pin.pin_mask());
+            port.pdr().modify(|r, w| w.bits(r.bits() | mask));
         }
         pin
     }
@@ -188,14 +211,18 @@ impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Output> {
     }
 
     pub fn set_high(&mut self) {
+        let port = self.port();
+        let mask = self.pin_mask();
         unsafe {
-            self.modify_register(0x04, 0, self.pin_mask());
+            port.podr().modify(|r, w| w.bits(r.bits() | mask));
         }
     }
 
     pub fn set_low(&mut self) {
+        let port = self.port();
+        let mask = self.pin_mask();
         unsafe {
-            self.modify_register(0x04, self.pin_mask(), 0);
+            port.podr().modify(|r, w| w.bits(r.bits() & !mask));
         }
     }
 
@@ -207,17 +234,17 @@ impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Output> {
     }
 
     pub fn toggle(&mut self) {
+        let port = self.port();
+        let mask = self.pin_mask();
         unsafe {
-            let current = self.read_register(0x04);
-            self.write_register(0x04, current ^ self.pin_mask());
+            port.podr().modify(|r, w| w.bits(r.bits() ^ mask));
         }
     }
 
     pub fn is_set_high(&self) -> bool {
-        unsafe {
-            let value = self.read_register(0x04);
-            value & self.pin_mask() != 0
-        }
+        let port = self.port();
+        let value = port.podr().read().bits();
+        value & self.pin_mask() != 0
     }
 
     pub fn is_set_low(&self) -> bool {
@@ -228,29 +255,48 @@ impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, Output> {
 impl<const PORT: char, const PIN: u8> Pin<PORT, PIN, OutputOpenDrain> {
     pub fn new() -> Self {
         let pin = Self { _mode: PhantomData };
+        let port = pin.port();
+        let mask = pin.pin_mask();
+        let mask_u32 = pin.pin_mask_u32();
+
         unsafe {
-            pin.modify_register(0x00, 0, pin.pin_mask());
-            pin.modify_register(0x0C, 0, pin.pin_mask());
+            port.pdr().modify(|r, w| w.bits(r.bits() | mask));
+
+            port.pcntr1().modify(|r, w| {
+                let current = r.bits();
+                let ndr_mask = mask_u32 << 8;
+                w.bits(current | ndr_mask)
+            });
         }
         pin
     }
 
     pub fn into_output(self) -> Pin<PORT, PIN, Output> {
+        let port = self.port();
+        let mask_u32 = self.pin_mask_u32();
         unsafe {
-            self.modify_register(0x0C, self.pin_mask(), 0);
+            port.pcntr1().modify(|r, w| {
+                let current = r.bits();
+                let ndr_mask = mask_u32 << 8;
+                w.bits(current & !ndr_mask)
+            });
         }
         Pin::<PORT, PIN, Output>::new()
     }
 
     pub fn set_high(&mut self) {
+        let port = self.port();
+        let mask = self.pin_mask();
         unsafe {
-            self.modify_register(0x04, 0, self.pin_mask());
+            port.podr().modify(|r, w| w.bits(r.bits() | mask));
         }
     }
 
     pub fn set_low(&mut self) {
+        let port = self.port();
+        let mask = self.pin_mask();
         unsafe {
-            self.modify_register(0x04, self.pin_mask(), 0);
+            port.podr().modify(|r, w| w.bits(r.bits() & !mask));
         }
     }
 

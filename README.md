@@ -4,21 +4,10 @@ Hardware Abstraction Layer (HAL) for Arduino Uno R4 (RA4M1) microcontroller, imp
 
 ## Features
 
-- **Delay**: Microsecond and millisecond delays using busy-wait loops
+- **Delay**: Microsecond and millisecond delays using busy-wait loops // TODO: Implement this with a timer
 - **GPIO**: Digital input/output with support for:
   - Input mode (with optional pull-up)
   - Output mode (push-pull and open-drain)
-  - Pin state reading and writing
-  - Pin toggling
-
-## Usage
-
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-arduino-uno-r4-hal = "0.1.0"
-```
 
 ## Examples
 
