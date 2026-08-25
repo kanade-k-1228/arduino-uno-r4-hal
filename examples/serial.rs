@@ -13,7 +13,7 @@ fn main() -> ! {
     let mut delay = p.delay;
 
     // D1 = TX, D0 = RX
-    let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks);
+    let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks).unwrap();
 
     let mut count: u32 = 0;
     loop {

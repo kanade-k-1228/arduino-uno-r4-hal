@@ -1,6 +1,6 @@
 # arduino-uno-r4-hal
 
-Arduino Uno R4 (Renesas RA4M1 / Cortex-M4F) 向けの [embedded-hal](https://github.com/rust-embedded/embedded-hal) 1.0 実装。[`ra4m1`](https://crates.io/crates/ra4m1) PAC の上に構築する。
+Arduino Uno R4 Minima / WiFi (Renesas RA4M1 / Cortex-M4F) 向けの [embedded-hal](https://github.com/rust-embedded/embedded-hal) 1.0 実装。[`ra4m1`](https://crates.io/crates/ra4m1) PAC の上に構築する。
 
 ## 特長
 
@@ -46,7 +46,7 @@ use core::fmt::Write;
 let p = Peripherals::take().unwrap();
 let clocks = p.clocks;
 // D1 = TX, D0 = RX, 115200 8N1
-let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks);
+let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks).unwrap();
 writeln!(serial, "hello").ok();
 ```
 
@@ -63,31 +63,64 @@ let value: u16 = adc.read(&a0); // 0..=16383
 
 ### PWM
 
+以下は既定の Minima feature 向け。WiFi では D6 に `p.gpt.gpt163` を使う。
+
 ```rust
 use arduino_uno_r4_hal::{pwm::PwmD6, Peripherals};
 use embedded_hal::pwm::SetDutyCycle;
 
 let p = Peripherals::take().unwrap();
-let mut pwm = PwmD6::new(p.gpt.gpt320, p.pins.d6, 1_000, &p.clocks); // 1kHz
+let mut pwm = PwmD6::new(p.gpt.gpt320, p.pins.d6, 1_000, &p.clocks).unwrap(); // 1kHz
 pwm.set_duty_cycle_percent(25).unwrap();
 ```
 
+## ボードの選択
+
+既定の feature は `uno-r4-minima`。Minima と WiFi では Arduino ヘッダの一部が異なる RA4M1 ピンへ接続されているため、必ず片方だけを有効にする。
+
+```toml
+# UNO R4 Minima (既定)
+arduino-uno-r4-hal = "0.2"
+
+# UNO R4 WiFi
+arduino-uno-r4-hal = { version = "0.2", default-features = false, features = ["uno-r4-wifi"] }
+```
+
+このリポジトリで WiFi 向けにビルドする場合は `cargo build --no-default-features --features uno-r4-wifi --examples` を使う。
+
 ## ピン対応表 (Arduino → RA4M1)
 
-| Arduino | RA4M1 | 機能 | | Arduino | RA4M1 | 機能 |
-|---|---|---|---|---|---|---|
-| D0  | P301 | RX (SCI2)        | | D10 | P112 | PWM(GTIOC3B) |
-| D1  | P302 | TX (SCI2)        | | D11 | P109 | PWM(GTIOC1A) |
-| D2  | P105 |                  | | D12 | P110 | |
-| D3  | P104 | PWM(GTIOC1B)     | | D13 | P111 | LED / PWM 不可 |
-| D4  | P103 |                  | | A0  | P014 | ADC AN009 |
-| D5  | P102 | PWM(GTIOC2B)     | | A1  | P000 | ADC AN000 |
-| D6  | P106 | PWM(GTIOC0B)     | | A2  | P001 | ADC AN001 |
-| D7  | P107 |                  | | A3  | P002 | ADC AN002 |
-| D8  | P304 |                  | | A4  | P101 | SDA / ADC AN021 |
-| D9  | P303 | PWM(GTIOC7B)     | | A5  | P100 | SCL / ADC AN022 |
+### UNO R4 Minima
+
+| Arduino | RA4M1 | 機能         |     | Arduino | RA4M1 | 機能            |
+| ------- | ----- | ------------ | --- | ------- | ----- | --------------- |
+| D0      | P301  | RX (SCI2)    |     | D10     | P112  | PWM(GTIOC3B)    |
+| D1      | P302  | TX (SCI2)    |     | D11     | P109  | PWM(GTIOC1A)    |
+| D2      | P105  |              |     | D12     | P110  |                 |
+| D3      | P104  | PWM(GTIOC1B) |     | D13     | P111  | LED / PWM 不可  |
+| D4      | P103  |              |     | A0      | P014  | ADC AN009       |
+| D5      | P102  | PWM(GTIOC2B) |     | A1      | P000  | ADC AN000       |
+| D6      | P106  | PWM(GTIOC0B) |     | A2      | P001  | ADC AN001       |
+| D7      | P107  |              |     | A3      | P002  | ADC AN002       |
+| D8      | P304  |              |     | A4      | P101  | SDA / ADC AN021 |
+| D9      | P303  | PWM(GTIOC7B) |     | A5      | P100  | SCL / ADC AN022 |
 
 > **PWM の注意**: D3 と D11 は同一 GPT チャネル (GPT321) を共有するため同時には片方のみ使用可能。
+
+### UNO R4 WiFi
+
+| Arduino | RA4M1 | 機能         |     | Arduino | RA4M1 | 機能            |
+| ------- | ----- | ------------ | --- | ------- | ----- | --------------- |
+| D0      | P301  | RX (SCI2)    |     | D10     | P103  | PWM(GTIOC2A)    |
+| D1      | P302  | TX (SCI2)    |     | D11     | P411  | PWM(GTIOC6A)    |
+| D2      | P104  |              |     | D12     | P410  |                 |
+| D3      | P105  | PWM(GTIOC1A) |     | D13     | P102  | LED / PWM 不可  |
+| D4      | P106  |              |     | A0      | P014  | ADC AN009       |
+| D5      | P107  | PWM(GTIOC0A) |     | A1      | P000  | ADC AN000       |
+| D6      | P111  | PWM(GTIOC3A) |     | A2      | P001  | ADC AN001       |
+| D7      | P112  |              |     | A3      | P002  | ADC AN002       |
+| D8      | P304  |              |     | A4      | P101  | SDA / ADC AN021 |
+| D9      | P303  | PWM(GTIOC7B) |     | A5      | P100  | SCL / ADC AN022 |
 
 ## ビルド
 
@@ -95,6 +128,7 @@ pwm.set_duty_cycle_percent(25).unwrap();
 
 ```bash
 cargo build --examples
+cargo test --target x86_64-unknown-linux-gnu --lib
 ```
 
 書き込み・実行には [`probe-rs`](https://probe.rs/) を使用 (`.cargo/config.toml` の runner):

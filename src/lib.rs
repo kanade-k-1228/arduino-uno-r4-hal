@@ -8,6 +8,9 @@
 //! - [`gpio::Pins`] — Arduino header pins (`d0`..`d13`, `a0`..`a5`)
 //! - PAC handles for UART / ADC / PWM (moved into their respective drivers)
 //!
+//! The `uno-r4-minima` feature is enabled by default. Disable default features and enable
+//! `uno-r4-wifi` when targeting the WiFi board; its digital and PWM pin mapping differs.
+//!
 //! ```ignore
 //! let p = arduino_uno_r4_hal::Peripherals::take().unwrap();
 //! let mut delay = p.delay;
@@ -19,6 +22,11 @@
 //! ```
 
 #![no_std]
+
+#[cfg(all(feature = "uno-r4-minima", feature = "uno-r4-wifi"))]
+compile_error!("features `uno-r4-minima` and `uno-r4-wifi` are mutually exclusive");
+#[cfg(not(any(feature = "uno-r4-minima", feature = "uno-r4-wifi")))]
+compile_error!("select a board feature: `uno-r4-minima` or `uno-r4-wifi`");
 
 mod setting;
 
@@ -68,7 +76,7 @@ impl Peripherals {
 
         let clocks = clock::init(dp.SYSTEM);
         let delay = Delay::new(cp.SYST, &clocks);
-        let pins = gpio::Pins::new(dp.PORT0, dp.PORT1, dp.PORT3, dp.PFS, dp.PMISC);
+        let pins = gpio::Pins::new(dp.PORT0, dp.PORT1, dp.PORT3, dp.PORT4, dp.PFS, dp.PMISC);
 
         Some(Self {
             clocks,
@@ -81,6 +89,7 @@ impl Peripherals {
                 gpt321: dp.GPT321,
                 gpt162: dp.GPT162,
                 gpt163: dp.GPT163,
+                gpt166: dp.GPT166,
                 gpt167: dp.GPT167,
             },
         })

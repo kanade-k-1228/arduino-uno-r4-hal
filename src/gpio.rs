@@ -167,6 +167,18 @@ impl<const PORT: char, const PIN: u8, MODE> Pin<PORT, PIN, MODE> {
 
     /// Switches to push-pull output.
     pub fn into_output(self) -> Pin<PORT, PIN, Output> {
+        self.into_output_in_state(PinState::Low)
+    }
+
+    /// Switches to push-pull output with the requested initial state.
+    ///
+    /// The output latch is set before the output driver is enabled, avoiding a transient
+    /// pulse during the mode change.
+    pub fn into_output_in_state(self, state: PinState) -> Pin<PORT, PIN, Output> {
+        match state {
+            PinState::High => unsafe { self.port().posr().write(|w| w.bits(self.mask())) },
+            PinState::Low => unsafe { self.port().porr().write(|w| w.bits(self.mask())) },
+        }
         modify_pfs(
             PORT,
             PIN,
@@ -178,6 +190,21 @@ impl<const PORT: char, const PIN: u8, MODE> Pin<PORT, PIN, MODE> {
 
     /// Switches to open-drain output.
     pub fn into_output_open_drain(self) -> Pin<PORT, PIN, OutputOpenDrain> {
+        // Released is the safest default for an open-drain bus.
+        self.into_output_open_drain_in_state(PinState::High)
+    }
+
+    /// Switches to open-drain output with the requested initial state.
+    ///
+    /// [`PinState::High`] releases the line and [`PinState::Low`] actively pulls it low.
+    pub fn into_output_open_drain_in_state(
+        self,
+        state: PinState,
+    ) -> Pin<PORT, PIN, OutputOpenDrain> {
+        match state {
+            PinState::High => unsafe { self.port().posr().write(|w| w.bits(self.mask())) },
+            PinState::Low => unsafe { self.port().porr().write(|w| w.bits(self.mask())) },
+        }
         modify_pfs(
             PORT,
             PIN,
@@ -344,20 +371,50 @@ impl_output!(OutputOpenDrain);
 /// `d13` is wired to the onboard LED (LED_BUILTIN).
 #[allow(missing_docs)]
 pub struct Pins {
-    pub d0: Pin<'3', 1, Input>,  // RX (Serial1)
-    pub d1: Pin<'3', 2, Input>,  // TX (Serial1)
+    pub d0: Pin<'3', 1, Input>, // RX (Serial1)
+    pub d1: Pin<'3', 2, Input>, // TX (Serial1)
+    #[cfg(feature = "uno-r4-minima")]
     pub d2: Pin<'1', 5, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d2: Pin<'1', 4, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d3: Pin<'1', 4, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d3: Pin<'1', 5, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d4: Pin<'1', 3, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d4: Pin<'1', 6, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d5: Pin<'1', 2, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d5: Pin<'1', 7, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d6: Pin<'1', 6, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d6: Pin<'1', 11, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d7: Pin<'1', 7, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d7: Pin<'1', 12, Input>,
     pub d8: Pin<'3', 4, Input>,
     pub d9: Pin<'3', 3, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d10: Pin<'1', 12, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d10: Pin<'1', 3, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d11: Pin<'1', 9, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d11: Pin<'4', 11, Input>,
+    #[cfg(feature = "uno-r4-minima")]
     pub d12: Pin<'1', 10, Input>,
-    pub d13: Pin<'1', 11, Input>, // LED_BUILTIN / SCK
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d12: Pin<'4', 10, Input>,
+    #[cfg(feature = "uno-r4-minima")]
+    pub d13: Pin<'1', 11, Input>,
+    #[cfg(feature = "uno-r4-wifi")]
+    pub d13: Pin<'1', 2, Input>, // LED_BUILTIN / SCK
     pub a0: Pin<'0', 14, Input>,
     pub a1: Pin<'0', 0, Input>,
     pub a2: Pin<'0', 1, Input>,
@@ -375,6 +432,7 @@ impl Pins {
         _port0: ra4m1::PORT0,
         _port1: ra4m1::PORT1,
         _port3: ra4m1::PORT3,
+        _port4: ra4m1::PORT4,
         _pfs: ra4m1::PFS,
         _pmisc: ra4m1::PMISC,
     ) -> Self {

@@ -21,6 +21,12 @@ use ra4m1::SYSTEM;
 /// HOCO oscillation frequency (48MHz), the Arduino Uno R4's system clock source.
 pub const HOCO_FREQ: HertzU32 = HertzU32::MHz(48);
 
+/// ICLK/1, PCLKA/1, PCLKB/2, PCLKC/1, PCLKD/1, FCLK/2.
+///
+/// RA4M1 requires the otherwise-reserved BCLK divisor bits [18:16] to mirror PCLKB,
+/// so bit 16 is set alongside PCKB=0b001.
+const SCKDIVCR_48MHZ: u32 = 0x1001_0100;
+
 /// `PRCR` unlock key: PRKEY=0xA5, PRC0=1 (clock generation registers writable), PRC1=1 (low-power mode).
 const PRCR_UNLOCK: u16 = 0xA503;
 /// `PRCR` relock (all permission bits cleared).
@@ -58,12 +64,12 @@ impl Clocks {
     pub fn pclkb(&self) -> HertzU32 {
         self.pclkb
     }
-    /// Peripheral clock C (PCLKC).
+    /// Peripheral clock C (PCLKC): reference clock for ADC140.
     #[inline]
     pub fn pclkc(&self) -> HertzU32 {
         self.pclkc
     }
-    /// Peripheral clock D (PCLKD): reference clock for GPT / ADC.
+    /// Peripheral clock D (PCLKD): reference clock for GPT.
     #[inline]
     pub fn pclkd(&self) -> HertzU32 {
         self.pclkd
@@ -93,22 +99,10 @@ pub fn init(system: SYSTEM) -> Clocks {
     // 4. Insert a flash wait cycle (required above ICLK>32MHz).
     system.memwait.modify(|_, w| w.memwait()._1());
 
-    // 5. Set dividers: ICLK/1=48, PCLKA/1=48, PCLKB/2=24, PCLKC/1=48, PCLKD/1=48, FCLK/2=24.
-    //    (divisor encoding: _000=/1, _001=/2). Result: SCKDIVCR = 0x1000_0100.
-    system.sckdivcr.write(|w| {
-        w.ick()
-            ._000()
-            .pcka()
-            ._000()
-            .pckb()
-            ._001()
-            .pckc()
-            ._000()
-            .pckd()
-            ._000()
-            .fck()
-            ._001()
-    });
+    // 5. Set dividers: ICLK/1=48, PCLKA/1=48, PCLKB/2=24, PCLKC/1=48,
+    //    PCLKD/1=48, FCLK/2=24. Bits [18:16] must mirror PCLKB on RA4M1,
+    //    although the PAC describes them as reserved.
+    system.sckdivcr.write(|w| unsafe { w.bits(SCKDIVCR_48MHZ) });
 
     // 6. Switch the system clock source to HOCO (CKSEL=0b000).
     system.sckscr.modify(|_, w| w.cksel()._000());
@@ -123,5 +117,16 @@ pub fn init(system: SYSTEM) -> Clocks {
         pclkc: HOCO_FREQ,
         pclkd: HOCO_FREQ,
         fclk: HOCO_FREQ / 2,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SCKDIVCR_48MHZ;
+
+    #[test]
+    fn bclk_divisor_bits_mirror_pclkb() {
+        assert_eq!((SCKDIVCR_48MHZ >> 16) & 0b111, 0b001);
+        assert_eq!((SCKDIVCR_48MHZ >> 8) & 0b111, 0b001);
     }
 }

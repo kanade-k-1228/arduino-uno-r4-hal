@@ -14,7 +14,7 @@ fn main() -> ! {
 
     let mut adc = Adc::new(p.adc140, &clocks);
     let a0 = p.pins.a0.into_analog();
-    let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks);
+    let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks).unwrap();
 
     loop {
         let value = adc.read(&a0); // 0..=16383

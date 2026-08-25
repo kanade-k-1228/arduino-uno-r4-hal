@@ -12,7 +12,10 @@ fn main() -> ! {
     let clocks = p.clocks;
     let mut delay = p.delay;
 
-    let mut pwm = PwmD6::new(p.gpt.gpt320, p.pins.d6, 1_000, &clocks);
+    #[cfg(feature = "uno-r4-minima")]
+    let mut pwm = PwmD6::new(p.gpt.gpt320, p.pins.d6, 1_000, &clocks).unwrap();
+    #[cfg(feature = "uno-r4-wifi")]
+    let mut pwm = PwmD6::new(p.gpt.gpt163, p.pins.d6, 1_000, &clocks).unwrap();
 
     loop {
         for duty in 0..=100u8 {

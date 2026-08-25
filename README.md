@@ -1,6 +1,6 @@
 # arduino-uno-r4-hal
 
-An [embedded-hal](https://github.com/rust-embedded/embedded-hal) 1.0 implementation for the Arduino Uno R4 (Renesas RA4M1 / Cortex-M4F), built on top of the [`ra4m1`](https://crates.io/crates/ra4m1) PAC.
+An [embedded-hal](https://github.com/rust-embedded/embedded-hal) 1.0 implementation for the Arduino Uno R4 Minima and WiFi (Renesas RA4M1 / Cortex-M4F), built on top of the [`ra4m1`](https://crates.io/crates/ra4m1) PAC.
 
 日本語版は [README.jp.md](README.jp.md) を参照してください。
 
@@ -48,7 +48,7 @@ use core::fmt::Write;
 let p = Peripherals::take().unwrap();
 let clocks = p.clocks;
 // D1 = TX, D0 = RX, 115200 8N1
-let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks);
+let mut serial = Serial::new(p.sci2, p.pins.d1, p.pins.d0, 115_200, &clocks).unwrap();
 writeln!(serial, "hello").ok();
 ```
 
@@ -65,16 +65,34 @@ let value: u16 = adc.read(&a0); // 0..=16383
 
 ### PWM
 
+This example is for the default Minima feature. On the WiFi board, D6 uses `p.gpt.gpt163`.
+
 ```rust
 use arduino_uno_r4_hal::{pwm::PwmD6, Peripherals};
 use embedded_hal::pwm::SetDutyCycle;
 
 let p = Peripherals::take().unwrap();
-let mut pwm = PwmD6::new(p.gpt.gpt320, p.pins.d6, 1_000, &p.clocks); // 1kHz
+let mut pwm = PwmD6::new(p.gpt.gpt320, p.pins.d6, 1_000, &p.clocks).unwrap(); // 1kHz
 pwm.set_duty_cycle_percent(25).unwrap();
 ```
 
+## Board selection
+
+The default feature is `uno-r4-minima`. The Minima and WiFi use different RA4M1 pins for part of the Arduino header, so exactly one board feature must be enabled:
+
+```toml
+# UNO R4 Minima (default)
+arduino-uno-r4-hal = "0.2"
+
+# UNO R4 WiFi
+arduino-uno-r4-hal = { version = "0.2", default-features = false, features = ["uno-r4-wifi"] }
+```
+
+For a WiFi build of this repository, use `cargo build --no-default-features --features uno-r4-wifi --examples`.
+
 ## Pin mapping (Arduino → RA4M1)
+
+### UNO R4 Minima
 
 | Arduino | RA4M1 | Function | | Arduino | RA4M1 | Function |
 |---|---|---|---|---|---|---|
@@ -91,12 +109,28 @@ pwm.set_duty_cycle_percent(25).unwrap();
 
 > **PWM note**: D3 and D11 share the same GPT channel (GPT321), so only one of them can be used at a time.
 
+### UNO R4 WiFi
+
+| Arduino | RA4M1 | Function | | Arduino | RA4M1 | Function |
+|---|---|---|---|---|---|---|
+| D0  | P301 | RX (SCI2)        | | D10 | P103 | PWM(GTIOC2A) |
+| D1  | P302 | TX (SCI2)        | | D11 | P411 | PWM(GTIOC6A) |
+| D2  | P104 |                  | | D12 | P410 | |
+| D3  | P105 | PWM(GTIOC1A)     | | D13 | P102 | LED / no PWM |
+| D4  | P106 |                  | | A0  | P014 | ADC AN009 |
+| D5  | P107 | PWM(GTIOC0A)     | | A1  | P000 | ADC AN000 |
+| D6  | P111 | PWM(GTIOC3A)     | | A2  | P001 | ADC AN001 |
+| D7  | P112 |                  | | A3  | P002 | ADC AN002 |
+| D8  | P304 |                  | | A4  | P101 | SDA / ADC AN021 |
+| D9  | P303 | PWM(GTIOC7B)     | | A5  | P100 | SCL / ADC AN022 |
+
 ## Build
 
 Target `thumbv7em-none-eabihf` (already the default in `.cargo/config.toml`):
 
 ```bash
 cargo build --examples
+cargo test --target x86_64-unknown-linux-gnu --lib
 ```
 
 Use [`probe-rs`](https://probe.rs/) to flash and run (configured as the runner in `.cargo/config.toml`):

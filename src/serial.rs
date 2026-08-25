@@ -47,6 +47,10 @@ impl embedded_hal_nb::serial::Error for Error {
     }
 }
 
+/// An invalid or insufficiently accurate baud-rate request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidBaudRate;
+
 /// UART backed by SCI2.
 pub struct Serial {
     sci: SCI2,
@@ -56,19 +60,30 @@ pub struct Serial {
 
 /// Finds the smallest `n` for which BRR fits in 0..=255, given `divisor = 8 << (2n)`
 /// (ABCS=1, BGDM=1), and returns `(BRR, CKS)`.
-const fn calc_brr(pclkb: u32, baud: u32) -> (u8, u8) {
+const fn calc_brr(pclka: u32, baud: u32) -> Option<(u8, u8)> {
+    if baud == 0 {
+        return None;
+    }
+
     let mut n = 0u32;
     while n <= 3 {
-        let div = 8u32 << (2 * n);
-        let denom = div * baud;
+        let div = 8u64 << (2 * n);
+        let denom = div * baud as u64;
         // Round (N+1) to the nearest integer.
-        let val = (pclkb + denom / 2) / denom;
+        let val = (pclka as u64 + denom / 2) / denom;
         if val >= 1 && val <= 256 {
-            return ((val - 1) as u8, n as u8);
+            // Reject settings whose baud-rate error exceeds 3%. Large errors can otherwise
+            // look representable near the upper end of the baud-rate range.
+            let target = denom * val;
+            let error = (pclka as u64).abs_diff(target);
+            if error * 100 <= target * 3 {
+                return Some(((val - 1) as u8, n as u8));
+            }
+            return None;
         }
         n += 1;
     }
-    (255, 3)
+    None
 }
 
 /// Releases the SCI2 module stop (MSTPCRB.MSTPB29=0).
@@ -91,22 +106,29 @@ impl Serial {
         rx: Pin<'3', 1, M2>,
         baud: u32,
         clocks: &Clocks,
-    ) -> Self {
+    ) -> Result<Self, InvalidBaudRate> {
+        let (brr, cks) = calc_brr(clocks.pclka().to_Hz(), baud).ok_or(InvalidBaudRate)?;
         enable_sci2();
 
         // Stop TX/RX while configuring.
         sci.scr().write(|w| unsafe { w.bits(0) });
+
+        // Restore all format-related registers that a bootloader may have changed.
+        sci.smr().reset();
+        sci.scmr.reset();
+        sci.semr.reset();
+        sci.snfr.reset();
 
         // Assign the pins to the SCI2 function.
         let _tx = tx.into_alternate(PSEL_SCI);
         let _rx = rx.into_alternate(PSEL_SCI);
 
         // SMR: asynchronous, 8-bit, no parity, 1 stop bit, CKS=cks.
-        let (brr, cks) = calc_brr(clocks.pclkb().to_Hz(), baud);
         sci.smr().write(|w| unsafe { w.bits(cks) });
         // SEMR: ABCS=1, BGDM=1 (improves baud rate resolution).
-        sci.semr.modify(|_, w| w.abcs()._1().bgdm()._1());
+        sci.semr.write(|w| w.abcs()._1().bgdm()._1());
         sci.brr.write(|w| unsafe { w.bits(brr) });
+        sci.ssr().modify(|_, w| w.orer()._0().fer()._0().per()._0());
 
         // The manual requires waiting at least one bit time after setting BRR before
         // enabling TX/RX.
@@ -115,7 +137,7 @@ impl Serial {
         // Enable TX/RX (polling only, no interrupts).
         sci.scr().modify(|_, w| w.te()._1().re()._1());
 
-        Self { sci, _tx, _rx }
+        Ok(Self { sci, _tx, _rx })
     }
 
     /// Releases the SCI2 handle and pins.
@@ -231,5 +253,31 @@ impl core::fmt::Write for Serial {
             nb::block!(self.write_byte(b)).ok();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calc_brr;
+
+    #[test]
+    fn calculates_common_baud_rates_at_48_mhz() {
+        assert_eq!(calc_brr(48_000_000, 115_200), Some((51, 0)));
+        assert_eq!(calc_brr(48_000_000, 9_600), Some((155, 1)));
+        assert_eq!(calc_brr(48_000_000, 1_200), Some((77, 3)));
+        assert_eq!(calc_brr(48_000_000, 600), Some((155, 3)));
+    }
+
+    #[test]
+    fn accepts_exact_maximum_baud_rate() {
+        assert_eq!(calc_brr(48_000_000, 6_000_000), Some((0, 0)));
+    }
+
+    #[test]
+    fn rejects_zero_out_of_range_and_inaccurate_rates() {
+        assert_eq!(calc_brr(48_000_000, 0), None);
+        assert_eq!(calc_brr(48_000_000, 300), None);
+        assert_eq!(calc_brr(48_000_000, 8_000_000), None);
+        assert_eq!(calc_brr(48_000_000, 4_000_000), None);
     }
 }

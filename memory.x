@@ -7,7 +7,7 @@ MEMORY {
 SECTIONS {
     PROVIDE(_option_setting = 0x00000400);
     .option_setting _option_setting : {
-        __option_settting = .;
+        __option_setting = .;
         KEEP(*(.option_setting));
         FILL(0xFFFFFFFF);
         . = _option_setting + 0x40;

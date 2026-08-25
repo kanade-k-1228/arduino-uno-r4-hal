@@ -72,9 +72,9 @@ impl Adc {
     pub fn new(adc: ADC140, _clocks: &Clocks) -> Self {
         enable_adc140();
         // 14-bit resolution (default is 12-bit), data right-aligned.
-        adc.adcer.modify(|_, w| w.adprc()._11().adrfmt()._0());
+        adc.adcer.write(|w| w.adprc()._11().adrfmt()._0());
         // Single-scan mode.
-        adc.adcsr.modify(|_, w| w.adcs()._00());
+        adc.adcsr.write(|w| w.adcs()._00());
         Self { adc }
     }
 
